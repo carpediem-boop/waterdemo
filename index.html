@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>水循環互動配對遊戲</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f0f9ff;
+            touch-action: manipulation;
+        }
+
+        /* Shake animation for incorrect drop zone */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+
+        .animate-shake {
+            animation: shake 0.4s ease-in-out;
+        }
+
+        /* Pulse / Hover highlight on target zone */
+        .drop-target-active {
+            background-color: rgba(254, 240, 138, 0.85) !important;
+            border-color: #f59e0b !important;
+            transform: scale(1.06);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+        }
+
+        /* Dragging element clone styling */
+        .dragging-ghost {
+            opacity: 0.4;
+        }
+
+        /* Tag touch floating clone */
+        .touch-drag-clone {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%) scale(1.1);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            transition: transform 0.05s ease;
+        }
+
+        /* Water flow animation */
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -40;
+            }
+        }
+        .animate-dash {
+            stroke-dasharray: 8;
+            animation: dash 2s linear infinite;
+        }
+
+        /* Wavy arrow animation for evaporation */
+        @keyframes float-up {
+            0% { transform: translateY(0); opacity: 0.7; }
+            50% { transform: translateY(-8px); opacity: 1; }
+            100% { transform: translateY(0); opacity: 0.7; }
+        }
+        .animate-float-up {
+            animation: float-up 2.5s ease-in-out infinite;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e0f2fe;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #38bdf8;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col items-center justify-between p-2 sm:p-4">
+
+    <!-- App Container -->
+    <div class="w-full max-w-6xl bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-sky-100 overflow-hidden my-2 flex flex-col">
+        
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 text-white p-4 sm:p-6 text-center relative overflow-hidden">
+            <div class="absolute -right-10 -bottom-10 opacity-10 text-9xl text-white select-none pointer-events-none">
+                <i class="fa-solid font-bold fa-water"></i>
+            </div>
+            <h1 class="text-2xl sm:text-4xl font-black tracking-wide flex items-center justify-center gap-3">
+                <i class="fa-solid fa-cloud-sun-rain text-amber-300"></i>
+                水循環互動配對遊戲
+            </h1>
+            <p class="text-sky-100 text-xs sm:text-base mt-2 max-w-2xl mx-auto font-medium">
+                將下方的橘黃色名稱標籤拖曳（或點擊配對）到水循環示意圖對應的位置，看看你能得幾分！
+            </p>
+        </header>
+
+        <!-- Main Interactive Workspace -->
+        <main class="p-3 sm:p-6 flex flex-col gap-6">
+
+            <!-- Interactive Diagram Box -->
+            <div id="diagram-container" class="relative w-full aspect-[10/6.8] sm:aspect-[10/6.2] bg-sky-100 rounded-2xl overflow-hidden border-2 border-sky-200 shadow-lg select-none">
+                
+                <!-- SVG Vector Illustration mirroring original image -->
+                <svg viewBox="0 0 1000 620" class="w-full h-full object-cover absolute inset-0 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <!-- Gradients -->
+                        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#7dd3fc" />
+                            <stop offset="60%" stop-color="#bae6fd" />
+                            <stop offset="100%" stop-color="#e0f2fe" />
+                        </linearGradient>
+                        
+                        <linearGradient id="oceanGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#0284c7" />
+                            <stop offset="40%" stop-color="#0369a1" />
+                            <stop offset="100%" stop-color="#0c4a6e" />
+                        </linearGradient>
+
+                        <linearGradient id="lakeGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#38bdf8" />
+                            <stop offset="100%" stop-color="#0284c7" />
+                        </linearGradient>
+
+                        <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#854d0e" />
+                            <stop offset="40%" stop-color="#713f12" />
+                            <stop offset="100%" stop-color="#451a03" />
+                        </linearGradient>
+
+                        <linearGradient id="sunGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#fef08a" />
+                            <stop offset="50%" stop-color="#fde047" />
+                            <stop offset="100%" stop-color="#eab308" />
+                        </linearGradient>
+
+                        <linearGradient id="mountainGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#64748b" />
+                            <stop offset="100%" stop-color="#334155" />
+                        </linearGradient>
+
+                        <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+                            <feDropShadow dx="2" dy="4" stdDeviation="3" flood-opacity="0.25"/>
+                        </filter>
+                    </defs>
+
+                    <!-- Sky Background -->
+                    <rect width="1000" height="420" fill="url(#skyGrad)" />
+
+                    <!-- Sun & Sun Rays -->
+                    <g transform="translate(760, 100)">
+                        <circle cx="0" cy="0" r="48" fill="url(#sunGrad)" filter="url(#dropShadow)" />
+                        <!-- Sun Rays -->
+                        <g stroke="#f59e0b" stroke-width="4" stroke-linecap="round">
+                            <line x1="0" y1="-60" x2="0" y2="-72" />
+                            <line x1="0" y1="60" x2="0" y2="72" />
+                            <line x1="-60" y1="0" x2="-72" y2="0" />
+                            <line x1="60" y1="0" x2="72" y2="0" />
+                            <line x1="-42" y1="-42" x2="-52" y2="-52" />
+                            <line x1="42" y1="42" x2="52" y2="52" />
+                            <line x1="42" y1="-42" x2="52" y2="-52" />
+                            <line x1="-42" y1="42" x2="-52" y2="52" />
+                        </g>
+                    </g>
+
+                    <!-- Ocean Body (Right side) -->
+                    <path d="M 520,380 C 520,380 570,390 620,380 C 670,370 750,385 820,380 C 900,375 1000,380 1000,380 L 1000,620 L 520,620 Z" fill="url(#oceanGrad)" />
+
+                    <!-- Underwater Coral & Plants -->
+                    <path d="M 980,620 Q 970,570 985,530 Q 995,500 980,480" fill="none" stroke="#059669" stroke-width="6" stroke-linecap="round"/>
+                    <path d="M 950,620 Q 940,580 955,550" fill="none" stroke="#10b981" stroke-width="5" stroke-linecap="round"/>
+                    <path d="M 920,620 Q 900,590 910,570" fill="none" stroke="#047857" stroke-width="4" stroke-linecap="round"/>
+
+                    <!-- Fish in Ocean -->
+                    <g fill="#f97316" transform="translate(680, 480) scale(0.8)">
+                        <ellipse cx="0" cy="0" rx="12" ry="7" />
+                        <polygon points="10,0 20,-8 20,8" />
+                        <circle cx="-6" cy="-2" r="1.5" fill="#fff" />
+                    </g>
+                    <g fill="#fbbf24" transform="translate(820, 520) scale(0.7) scale(-1, 1)">
+                        <ellipse cx="0" cy="0" rx="12" ry="7" />
+                        <polygon points="10,0 20,-8 20,8" />
+                        <circle cx="-6" cy="-2" r="1.5" fill="#fff" />
+                    </g>
+                    <!-- Ocean Bubbles -->
+                    <circle cx="660" cy="520" r="3" fill="#fff" opacity="0.5" />
+                    <circle cx="663" cy="490" r="4" fill="#fff" opacity="0.6" />
+                    <circle cx="670" cy="450" r="2.5" fill="#fff" opacity="0.4" />
+                    <circle cx="830" cy="480" r="3.5" fill="#fff" opacity="0.5" />
+
+                    <!-- Evaporation Wavy Yellow Arrows above Ocean -->
+                    <g class="animate-float-up" transform="translate(800, 260)">
+                        <!-- 3 Rising Arrows -->
+                        <g stroke="#f59e0b" stroke-width="4" fill="none" stroke-linecap="round">
+                            <path d="M -50,60 C -50,40 -30,30 -30,10 C -30,-10 -50,-20 -50,-40" />
+                            <polygon points="-50,-48 -58,-36 -42,-36" fill="#f59e0b" />
+
+                            <path d="M 0,60 C 0,40 20,30 20,10 C 20,-10 0,-20 0,-40" />
+                            <polygon points="0,-48 -8,-36 8,-36" fill="#f59e0b" />
+
+                            <path d="M 50,60 C 50,40 70,30 70,10 C 70,-10 50,-20 50,-40" />
+                            <polygon points="50,-48 42,-36 58,-36" fill="#f59e0b" />
+                        </g>
+                    </g>
+
+                    <!-- Soil / Ground Layers -->
+                    <path d="M 0,380 L 180,380 Q 220,380 250,420 L 270,450 C 320,440 480,440 520,380 L 520,620 L 0,620 Z" fill="url(#soilGrad)" />
+
+                    <!-- Soil Surface Grass Ribbon -->
+                    <path d="M 0,380 L 180,380 Q 220,380 250,420 L 270,430 L 310,430 Q 320,440 330,450" fill="none" stroke="#22c55e" stroke-width="8" stroke-linecap="round"/>
+                    <path d="M 470,435 Q 500,410 520,380" fill="none" stroke="#22c55e" stroke-width="8" stroke-linecap="round"/>
+
+                    <!-- Lake Water (Middle) -->
+                    <path d="M 270,435 C 280,550 460,550 480,435 Z" fill="url(#lakeGrad)" stroke="#0284c7" stroke-width="3" />
+
+                    <!-- Infiltration Drops under Lake / Soil -->
+                    <g fill="#38bdf8" opacity="0.8">
+                        <circle cx="210" cy="460" r="4" />
+                        <circle cx="225" cy="485" r="3.5" />
+                        <circle cx="205" cy="510" r="4" />
+                        <circle cx="230" cy="535" r="3" />
+                        <!-- Downward arrow indicator -->
+                        <path d="M 190,450 L 190,490 M 185,485 L 190,495 L 195,485" stroke="#38bdf8" stroke-width="3" fill="none" stroke-linecap="round"/>
+                    </g>
+
+                    <!-- Underground Water Stream (Yellow Arrow underground) -->
+                    <g transform="translate(380, 520)">
+                        <path d="M -30,20 C 30,40 100,20 150,15" fill="none" stroke="#eab308" stroke-width="6" stroke-linecap="round" stroke-dasharray="8 4"/>
+                        <polygon points="160,14 146,6 148,22" fill="#eab308" />
+                    </g>
+
+                    <!-- High Mountain (Left Center) -->
+                    <polygon points="270,180 120,410 420,410" fill="url(#mountainGrad)" />
+                    <polygon points="270,180 180,320 230,310 270,340 320,300 360,330 420,410" fill="#475569" />
+                    
+                    <!-- Mountain Snow Cap -->
+                    <path d="M 270,180 L 225,250 L 245,245 L 270,265 L 295,245 L 315,255 Z" fill="#f8fafc" filter="url(#dropShadow)"/>
+
+                    <!-- Mountain Stream (Snowmelt flowing down) -->
+                    <path d="M 270,265 Q 260,320 285,350 T 300,435" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round" />
+
+                    <!-- Left Green Tree & Roots -->
+                    <g transform="translate(100, 380)">
+                        <!-- Tree Trunk -->
+                        <path d="M -10,0 L -12,-60 Q -12,-70 0,-70 Q 12,-70 12,-60 L 10,0 Z" fill="#78350f" />
+                        <!-- Tree Roots Underground -->
+                        <path d="M -8,0 Q -25,30 -50,45 M 0,0 Q 0,40 -5,65 M 8,0 Q 25,30 45,50" fill="none" stroke="#78350f" stroke-width="4" stroke-linecap="round"/>
+                        <!-- Tree Foliage Canopy -->
+                        <circle cx="-25" cy="-90" r="35" fill="#15803d" />
+                        <circle cx="25" cy="-90" r="35" fill="#16a34a" />
+                        <circle cx="0" cy="-120" r="42" fill="#22c55e" />
+                    </g>
+
+                    <!-- Transpiration Arrows above Tree -->
+                    <g class="animate-float-up" transform="translate(100, 220)">
+                        <g stroke="#f59e0b" stroke-width="4" fill="none" stroke-linecap="round">
+                            <path d="M -30,40 C -30,25 -20,15 -20,0" />
+                            <polygon points="-20,-8 -27,3 -13,3" fill="#f59e0b" />
+
+                            <path d="M 0,40 C 0,25 10,15 10,0" />
+                            <polygon points="10,-8 3,3 17,3" fill="#f59e0b" />
+
+                            <path d="M 30,40 C 30,25 40,15 40,0" />
+                            <polygon points="40,-8 33,3 47,3" fill="#f59e0b" />
+                        </g>
+                    </g>
+
+                    <!-- Darker Rain Cloud above Mountain -->
+                    <g transform="translate(250, 110)">
+                        <path d="M -60,20 Q -80,20 -80,0 Q -80,-20 -60,-25 Q -50,-45 -20,-45 Q 10,-45 25,-25 Q 45,-25 45,0 Q 45,20 25,20 Z" fill="#64748b" opacity="0.9" />
+                        <path d="M -30,25 Q -50,25 -50,5 Q -50,-15 -30,-20 Q -20,-35 10,-35 Q 35,-35 45,-20 Q 60,-20 60,5 Q 60,25 45,25 Z" fill="#94a3b8" />
+                    </g>
+
+                    <!-- Fluffy White Cloud (Condensation) -->
+                    <g transform="translate(320, 100)">
+                        <path d="M -40,15 Q -55,15 -55,0 Q -55,-15 -40,-20 Q -30,-35 -5,-35 Q 15,-35 25,-20 Q 40,-20 40,0 Q 40,15 25,15 Z" fill="#ffffff" filter="url(#dropShadow)" />
+                    </g>
+
+                    <!-- Rain Drops (Precipitation) -->
+                    <g stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.8">
+                        <line x1="200" y1="150" x2="190" y2="180" />
+                        <line x1="220" y1="140" x2="210" y2="170" />
+                        <line x1="240" y1="160" x2="230" y2="190" />
+                        <line x1="210" y1="190" x2="200" y2="220" />
+                        <line x1="235" y1="195" x2="225" y2="225" />
+                        <line x1="255" y1="170" x2="245" y2="200" />
+                    </g>
+
+                    <!-- Label Arrows/Lines in original illustration style -->
+                    <!-- Groundwater yellow curve indicator -->
+                    <path d="M 430,550 Q 480,560 520,535" fill="none" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+
+                <!-- HTML Drop Zones Overlay -->
+
+                <!-- 1. 凝結 (Cloud Top Center) -->
+                <div data-answer="凝結" id="zone-condensation" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[22%] top-[6%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">☁️ 雲朵處</span>
+                </div>
+
+                <!-- 2. 蒸散 (Above Left Tree) -->
+                <div data-answer="蒸散" id="zone-transpiration" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[3%] top-[20%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">🌿 樹木上方</span>
+                </div>
+
+                <!-- 3. 降水 (Rain falling over mountain) -->
+                <div data-answer="降水" id="zone-precipitation" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[21%] top-[31%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">🌧️ 下雨山峰</span>
+                </div>
+
+                <!-- 4. 融雪 (Mountain Slope / Snow melt) -->
+                <div data-answer="融雪" id="zone-snowmelt" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[37%] top-[45%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">🏔️ 山腰雪塊</span>
+                </div>
+
+                <!-- 5. 湖泊 (Middle Lake) -->
+                <div data-answer="湖泊" id="zone-lake" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[29%] top-[65%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">💧 藍色湖泊</span>
+                </div>
+
+                <!-- 6. 水分入滲 (Soil / Infiltration area) -->
+                <div data-answer="水分入滲" id="zone-infiltration" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[9%] top-[70%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">🌱 泥土土壤層</span>
+                </div>
+
+                <!-- 7. 地下水流 (Deep Soil Underground) -->
+                <div data-answer="地下水流" id="zone-groundwater" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[45%] top-[81%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">➡️ 地下水箭頭</span>
+                </div>
+
+                <!-- 8. 海洋 (Ocean Area) -->
+                <div data-answer="海洋" id="zone-ocean" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[73%] top-[67%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">🌊 深藍海洋</span>
+                </div>
+
+                <!-- 9. 蒸發 (Above Ocean Evaporation) -->
+                <div data-answer="蒸發" id="zone-evaporation" class="drop-zone absolute w-[18%] h-[11%] sm:w-[16%] sm:h-[10%] left-[79%] top-[25%] border-2 border-dashed border-sky-500 bg-white/70 hover:bg-yellow-50 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md">
+                    <span class="text-xs sm:text-sm font-semibold text-sky-700 pointer-events-none opacity-60">☀️ 上升蒸發</span>
+                </div>
+
+            </div>
+
+            <!-- Available Tags Bank Box -->
+            <div class="bg-amber-50/80 border-2 border-amber-200 rounded-xl p-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm sm:text-base font-bold text-amber-900 flex items-center gap-2">
+                        <i class="fa-solid fa-tags text-amber-600"></i>
+                        名稱標籤列（點擊或拖曳標籤至圖解中）：
+                    </h2>
+                    <span id="bank-count-badge" class="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                        剩餘 9 個
+                    </span>
+                </div>
+                
+                <!-- Tag Bank Container -->
+                <div id="tag-bank" class="min-h-[60px] p-2 bg-white/80 rounded-lg border border-amber-200 flex flex-wrap items-center justify-center gap-2 sm:gap-3 transition-colors">
+                    <!-- Dynamic draggable tags generated via JavaScript -->
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+                <button id="btn-check" class="flex-1 sm:flex-none min-w-[140px] px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-circle-check"></i>
+                    檢查答案
+                </button>
+                <button id="btn-reset" class="flex-1 sm:flex-none min-w-[130px] px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    重新開始
+                </button>
+                <button id="btn-show-answers" class="w-full sm:w-auto px-5 py-3 bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold rounded-xl border border-sky-300 shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-lightbulb text-amber-500"></i>
+                    顯示正確解答
+                </button>
+            </div>
+
+            <!-- Score & Message Results Card -->
+            <div id="result-card" class="hidden bg-white border-2 rounded-2xl p-4 sm:p-6 shadow-md transition-all duration-300">
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div class="flex items-center gap-4">
+                        <div id="score-badge" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-100 border-4 border-emerald-500 flex flex-col items-center justify-center shrink-0 shadow-inner">
+                            <span id="score-percentage" class="text-2xl sm:text-3xl font-black text-emerald-700">0%</span>
+                            <span id="score-fraction" class="text-xs text-emerald-600 font-semibold">0/9 對</span>
+                        </div>
+                        <div>
+                            <h3 id="result-title" class="text-lg sm:text-xl font-bold text-slate-800">作答結果</h3>
+                            <p id="result-message" class="text-sm sm:text-base text-slate-600 mt-1 font-medium"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fun Fact Card (💡 水循環小知識) -->
+            <div class="bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-300/70 rounded-2xl p-4 sm:p-5 shadow-sm relative overflow-hidden">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-amber-400 text-amber-950 rounded-xl shadow-sm shrink-0 mt-0.5">
+                        <i class="fa-solid fa-lightbulb text-xl sm:text-2xl animate-bounce"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-base sm:text-lg font-bold text-amber-950">💡 水循環小知識</h4>
+                            <button id="btn-next-fact" class="text-xs text-amber-800 hover:text-amber-950 bg-amber-200/80 hover:bg-amber-300 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1">
+                                <i class="fa-solid fa-arrows-rotate"></i> 換一個
+                            </button>
+                        </div>
+                        <p id="fun-fact-text" class="text-sm sm:text-base text-amber-900 mt-1.5 leading-relaxed font-medium">
+                            <!-- Populated dynamically -->
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-slate-100 border-t border-slate-200 p-3 text-center text-xs text-slate-500 font-medium">
+            水循環互動學習單元 &bull; 適用於自然與科學領域課程
+        </footer>
+    </div>
+
+    <script>
+        // Correct Water Cycle Data
+        const WATER_CYCLE_DATA = [
+            { id: 'condensation', text: '凝結' },
+            { id: 'transpiration', text: '蒸散' },
+            { id: 'precipitation', text: '降水' },
+            { id: 'snowmelt', text: '融雪' },
+            { id: 'lake', text: '湖泊' },
+            { id: 'infiltration', text: '水分入滲' },
+            { id: 'groundwater', text: '地下水流' },
+            { id: 'ocean', text: '海洋' },
+            { id: 'evaporation', text: '蒸發' }
+        ];
+
+        // Scientific Fun Facts Bank (At least 8 facts)
+        const FUN_FACTS = [
+            "地球的水總量高達 13.86 億立方公里，但其中有 97.5% 是鹹鹹的海水，只有不到 1% 的淡水能供人類直接飲用！",
+            "水分子在海洋中平均停留時間長達 3,000 年以上，但在大氣層中平均只停留約 9 天就會變成雨或雪降落！",
+            "植物蒸散作用非常驚人，一棵高大的大樹在炎熱的夏天，一天可以蒸散出數百公升的水蒸氣到空氣中！",
+            "地球上的水已經循環了數十億年，你今天喝的一口水，幾億年前可能曾被恐龍喝過呢！",
+            "降水不只有下雨！降水還包含了下雪、冰雹、露水和霜，只要是大氣中凝結落到地面上的水都算！",
+            "地下水是全球最大的可用淡水庫，全世界有數十億人的日常飲用水全靠深層地下水！",
+            "太陽是推動整個水循環的核心引擎！太陽熱能讓海水蒸發上升，進而驅動大氣與大自然的循環。",
+            "地球上的雲其實非常重！一朵看起來輕飄飄的積雲，裡面的水滴總重量可能高達 500 噸（相當於 100 頭大象）！",
+            "冰川與高山積雪鎖住了地球上約 68.7% 的淡水，是地球上極為珍貴的固態淡水資源庫！"
+        ];
+
+        let selectedTagElement = null; // For click-to-place feature
+        let currentTouchClone = null; // For touch pointer dragging
+        let draggedTagDataText = null;
+        let lastFactIndex = -1;
+
+        // DOM Elements
+        const tagBank = document.getElementById('tag-bank');
+        const dropZones = document.querySelectorAll('.drop-zone');
+        const bankCountBadge = document.getElementById('bank-count-badge');
+        const btnCheck = document.getElementById('btn-check');
+        const btnReset = document.getElementById('btn-reset');
+        const btnShowAnswers = document.getElementById('btn-show-answers');
+        const btnNextFact = document.getElementById('btn-next-fact');
+        const resultCard = document.getElementById('result-card');
+        const scorePercentage = document.getElementById('score-percentage');
+        const scoreFraction = document.getElementById('score-fraction');
+        const scoreBadge = document.getElementById('score-badge');
+        const resultTitle = document.getElementById('result-title');
+        const resultMessage = document.getElementById('result-message');
+        const funFactText = document.getElementById('fun-fact-text');
+
+        // Shuffle Array helper
+        function shuffle(array) {
+            const arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // Display a new random Fun Fact
+        function displayRandomFact() {
+            let randomIndex;
+            do {
+                randomIndex = Math.floor(Math.random() * FUN_FACTS.length);
+            } while (randomIndex === lastFactIndex && FUN_FACTS.length > 1);
+            
+            lastFactIndex = randomIndex;
+            funFactText.textContent = FUN_FACTS[randomIndex];
+        }
+
+        // Create HTML Tag Element (Styled as photo orange/yellow label)
+        function createTagElement(text) {
+            const tag = document.createElement('div');
+            tag.className = 'tag-item bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-amber-950 font-bold border-2 border-amber-500 rounded-lg shadow-md px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm cursor-grab active:cursor-grabbing select-none transition-all duration-150 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5';
+            tag.setAttribute('draggable', 'true');
+            tag.dataset.text = text;
+            tag.innerHTML = `<i class="fa-solid fa-grip-vertical text-amber-700/60 text-xs"></i><span>${text}</span>`;
+
+            // Attach standard HTML5 Drag listeners
+            tag.addEventListener('dragstart', handleDragStart);
+            tag.addEventListener('dragend', handleDragEnd);
+
+            // Attach Click listener for tap-to-select alternative
+            tag.addEventListener('click', handleTagClick);
+
+            // Attach Touch/Pointer listeners for smooth mobile dragging
+            tag.addEventListener('touchstart', handleTouchStart, { passive: false });
+
+            return tag;
+        }
+
+        // --- HTML5 Drag & Drop Handlers ---
+        function handleDragStart(e) {
+            draggedTagDataText = this.dataset.text;
+            e.dataTransfer.setData('text/plain', this.dataset.text);
+            e.dataTransfer.effectAllowed = 'move';
+            this.classList.add('dragging-ghost');
+            clearSelection();
+        }
+
+        function handleDragEnd(e) {
+            this.classList.remove('dragging-ghost');
+            draggedTagDataText = null;
+        }
+
+        // --- Drop Zone Event Handlers ---
+        dropZones.forEach(zone => {
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                zone.classList.add('drop-target-active');
+            });
+
+            zone.addEventListener('dragleave', (e) => {
+                zone.classList.remove('drop-target-active');
+            });
+
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drop-target-active');
+                const text = e.dataTransfer.getData('text/plain') || draggedTagDataText;
+                if (text) {
+                    placeTagInZone(text, zone);
+                }
+            });
+
+            // Click zone to place currently selected tag
+            zone.addEventListener('click', () => {
+                if (selectedTagElement) {
+                    const text = selectedTagElement.dataset.text;
+                    placeTagInZone(text, zone);
+                    clearSelection();
+                }
+            });
+        });
+
+        // Allow dragging back to tag bank
+        tagBank.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            tagBank.classList.add('bg-amber-100/80');
+        });
+
+        tagBank.addEventListener('dragleave', () => {
+            tagBank.classList.remove('bg-amber-100/80');
+        });
+
+        tagBank.addEventListener('drop', (e) => {
+            e.preventDefault();
+            tagBank.classList.remove('bg-amber-100/80');
+            const text = e.dataTransfer.getData('text/plain') || draggedTagDataText;
+            if (text) {
+                returnTagToBank(text);
+            }
+        });
+
+        tagBank.addEventListener('click', (e) => {
+            if (e.target === tagBank && selectedTagElement) {
+                returnTagToBank(selectedTagElement.dataset.text);
+                clearSelection();
+            }
+        });
+
+        // Core Logic: Place a tag in a zone with Fail-safe swap
+        function placeTagInZone(text, targetZone) {
+            // Find existing tag element in bank or other zones
+            let existingTag = document.querySelector(`.tag-item[data-text="${text}"]`);
+
+            // Check if target zone already has a tag (Fail-safe防呆機制)
+            const currentTagInZone = targetZone.querySelector('.tag-item');
+            if (currentTagInZone) {
+                // Return the old tag back to tag bank
+                const oldText = currentTagInZone.dataset.text;
+                returnTagToBank(oldText);
+            }
+
+            // Remove any styling/validation states on the target zone
+            resetZoneStyles(targetZone);
+
+            // If tag doesn't exist yet (rare), create it
+            if (!existingTag) {
+                existingTag = createTagElement(text);
+            }
+
+            // Append tag into drop zone
+            targetZone.appendChild(existingTag);
+            existingTag.classList.add('w-full', 'h-full', 'm-0'); // Scale to fit drop zone nicely
+
+            updateBankBadge();
+            hideResults();
+        }
+
+        // Return tag to bottom bank
+        function returnTagToBank(text) {
+            const existingTag = document.querySelector(`.tag-item[data-text="${text}"]`);
+            if (existingTag) {
+                const parentZone = existingTag.parentElement;
+                if (parentZone && parentZone.classList.contains('drop-zone')) {
+                    resetZoneStyles(parentZone);
+                }
+                existingTag.classList.remove('w-full', 'h-full', 'm-0');
+                tagBank.appendChild(existingTag);
+            }
+            updateBankBadge();
+            hideResults();
+        }
+
+        // Reset individual drop zone styling
+        function resetZoneStyles(zone) {
+            zone.classList.remove('border-emerald-500', 'bg-emerald-100/90', 'border-red-500', 'bg-red-100/90', 'animate-shake');
+            zone.classList.add('border-sky-500', 'bg-white/70');
+            // Remove checkmark badges if any
+            const badge = zone.querySelector('.result-badge');
+            if (badge) badge.remove();
+        }
+
+        // Click-to-select tag handler for touch/mouse ease
+        function handleTagClick(e) {
+            e.stopPropagation();
+            const tag = this;
+
+            // If tag is inside a drop zone and NOT selected, clicking it returns it to bank (or selects it)
+            if (selectedTagElement === tag) {
+                clearSelection();
+                return;
+            }
+
+            clearSelection();
+            selectedTagElement = tag;
+            tag.classList.add('ring-4', 'ring-amber-600', 'scale-105');
+        }
+
+        function clearSelection() {
+            if (selectedTagElement) {
+                selectedTagElement.classList.remove('ring-4', 'ring-amber-600', 'scale-105');
+                selectedTagElement = null;
+            }
+        }
+
+        // Touch Dragging Logic for iOS/Android
+        function handleTouchStart(e) {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            const tag = this;
+            const text = tag.dataset.text;
+
+            // Create floating clone
+            const clone = tag.cloneNode(true);
+            clone.classList.add('touch-drag-clone');
+            document.body.appendChild(clone);
+            clone.style.left = touch.clientX + 'px';
+            clone.style.top = touch.clientY + 'px';
+
+            tag.classList.add('opacity-40');
+
+            function handleTouchMove(eMove) {
+                eMove.preventDefault();
+                const moveTouch = eMove.touches[0];
+                clone.style.left = moveTouch.clientX + 'px';
+                clone.style.top = moveTouch.clientY + 'px';
+
+                // Find element under touch point
+                clone.style.visibility = 'hidden';
+                const elemBelow = document.elementFromPoint(moveTouch.clientX, moveTouch.clientY);
+                clone.style.visibility = 'visible';
+
+                // Highlight drop zone under touch
+                dropZones.forEach(zone => zone.classList.remove('drop-target-active'));
+                if (elemBelow) {
+                    const zone = elemBelow.closest('.drop-zone');
+                    if (zone) zone.classList.add('drop-target-active');
+                }
+            }
+
+            function handleTouchEnd(eEnd) {
+                document.removeEventListener('touchmove', handleTouchMove);
+                document.removeEventListener('touchend', handleTouchEnd);
+
+                const endTouch = eEnd.changedTouches[0];
+                clone.style.visibility = 'hidden';
+                const elemBelow = document.elementFromPoint(endTouch.clientX, endTouch.clientY);
+                clone.remove();
+                tag.classList.remove('opacity-40');
+
+                dropZones.forEach(zone => zone.classList.remove('drop-target-active'));
+
+                if (elemBelow) {
+                    const zone = elemBelow.closest('.drop-zone');
+                    const bank = elemBelow.closest('#tag-bank');
+                    if (zone) {
+                        placeTagInZone(text, zone);
+                    } else if (bank) {
+                        returnTagToBank(text);
+                    }
+                }
+            }
+
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTouchEnd);
+        }
+
+        // Update Tag Bank count badge
+        function updateBankBadge() {
+            const count = tagBank.querySelectorAll('.tag-item').length;
+            bankCountBadge.textContent = `剩餘 ${count} 個`;
+        }
+
+        function hideResults() {
+            resultCard.classList.add('hidden');
+        }
+
+        // --- Answer Checking Logic ---
+        btnCheck.addEventListener('click', () => {
+            let correctCount = 0;
+            let filledCount = 0;
+            const total = WATER_CYCLE_DATA.length;
+
+            dropZones.forEach(zone => {
+                resetZoneStyles(zone);
+                const expectedAnswer = zone.dataset.answer;
+                const tag = zone.querySelector('.tag-item');
+
+                if (tag) {
+                    filledCount++;
+                    const userText = tag.dataset.text;
+                    if (userText === expectedAnswer) {
+                        correctCount++;
+                        // Correct Styling
+                        zone.classList.remove('border-sky-500', 'bg-white/70');
+                        zone.classList.add('border-emerald-500', 'bg-emerald-100/90');
+                        
+                        // Add checkmark icon
+                        const badge = document.createElement('div');
+                        badge.className = 'result-badge absolute -top-2 -right-2 bg-emerald-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow';
+                        badge.innerHTML = '<i class="fa-solid fa-check"></i>';
+                        zone.appendChild(badge);
+                    } else {
+                        // Incorrect Styling
+                        zone.classList.remove('border-sky-500', 'bg-white/70');
+                        zone.classList.add('border-red-500', 'bg-red-100/90', 'animate-shake');
+
+                        // Add cross icon
+                        const badge = document.createElement('div');
+                        badge.className = 'result-badge absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow';
+                        badge.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                        zone.appendChild(badge);
+                    }
+                }
+            });
+
+            // Calculate percentage score
+            const percentage = Math.round((correctCount / total) * 100);
+
+            // Display Score Card
+            resultCard.classList.remove('hidden');
+            scorePercentage.textContent = `${percentage}%`;
+            scoreFraction.textContent = `${correctCount}/${total} 對`;
+
+            // Style Badge according to score
+            if (percentage === 100) {
+                scoreBadge.className = "w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-100 border-4 border-emerald-500 flex flex-col items-center justify-center shrink-0 shadow-inner";
+                scorePercentage.className = "text-2xl sm:text-3xl font-black text-emerald-700";
+                scoreFraction.className = "text-xs text-emerald-600 font-semibold";
+                resultTitle.textContent = "🎉 太棒了！完美拿滿分！";
+                resultTitle.className = "text-lg sm:text-xl font-bold text-emerald-800";
+                resultMessage.textContent = "你完全掌握了水循環的各個環節！簡直是水循環小達人！";
+
+                // Trigger Confetti Celebration!
+                if (typeof confetti === 'function') {
+                    confetti({
+                        particleCount: 100,
+                        spread: 70,
+                        origin: { y: 0.6 }
+                    });
+                }
+            } else if (percentage >= 70) {
+                scoreBadge.className = "w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-blue-100 border-4 border-blue-500 flex flex-col items-center justify-center shrink-0 shadow-inner";
+                scorePercentage.className = "text-2xl sm:text-3xl font-black text-blue-700";
+                scoreFraction.className = "text-xs text-blue-600 font-semibold";
+                resultTitle.textContent = "💪 非常優秀！表現很棒！";
+                resultTitle.className = "text-lg sm:text-xl font-bold text-blue-800";
+                resultMessage.textContent = filledCount < total 
+                    ? `答對了大部分！還有 ${total - filledCount} 個位置尚未填寫喔，繼續加油！`
+                    : "答對了大部分！再仔細檢查一下紅色的部分，就能挑戰 100 分囉！";
+            } else {
+                scoreBadge.className = "w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-amber-100 border-4 border-amber-500 flex flex-col items-center justify-center shrink-0 shadow-inner";
+                scorePercentage.className = "text-2xl sm:text-3xl font-black text-amber-700";
+                scoreFraction.className = "text-xs text-amber-600 font-semibold";
+                resultTitle.textContent = "🌟 做得好！再試試看吧！";
+                resultTitle.className = "text-lg sm:text-xl font-bold text-amber-800";
+                resultMessage.textContent = filledCount < total
+                    ? `還有 ${total - filledCount} 個位置尚未填寫喔！水循環很有趣，再思考看看！`
+                    : "別灰心！點擊「顯示正確解答」來複習，或者重新開始再挑戰一次！";
+            }
+
+            // Update fun fact as bonus
+            displayRandomFact();
+
+            // Smooth scroll down to result card on mobile
+            resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+
+        // Reset Game Button
+        btnReset.addEventListener('click', initGame);
+
+        // Show Answers Button
+        btnShowAnswers.addEventListener('click', () => {
+            WATER_CYCLE_DATA.forEach(item => {
+                const zone = document.getElementById(`zone-${item.id}`);
+                if (zone) {
+                    placeTagInZone(item.text, zone);
+                }
+            });
+            hideResults();
+        });
+
+        // Next Fun Fact Button
+        btnNextFact.addEventListener('click', displayRandomFact);
+
+        // Game Initialization
+        function initGame() {
+            clearSelection();
+            hideResults();
+
+            // Clear all drop zones
+            dropZones.forEach(zone => {
+                resetZoneStyles(zone);
+                zone.innerHTML = zone.dataset.defaultHtml || zone.innerHTML;
+            });
+
+            // Store original placeholder HTML for drop zones
+            dropZones.forEach(zone => {
+                if (!zone.dataset.defaultHtml) {
+                    zone.dataset.defaultHtml = zone.innerHTML;
+                } else {
+                    zone.innerHTML = zone.dataset.defaultHtml;
+                }
+            });
+
+            // Clear tag bank
+            tagBank.innerHTML = '';
+
+            // Shuffle tags and populate bank
+            const shuffledTexts = shuffle(WATER_CYCLE_DATA.map(d => d.text));
+            shuffledTexts.forEach(text => {
+                const tag = createTagElement(text);
+                tagBank.appendChild(tag);
+            });
+
+            updateBankBadge();
+            displayRandomFact();
+        }
+
+        // Start game on load
+        window.addEventListener('load', initGame);
+    </script>
+</body>
+</html>
